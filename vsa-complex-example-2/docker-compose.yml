@@ -1,0 +1,72 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - 5672:5672
+      - 15672:15672
+    env_file:
+      - ./apps/checkout-service/.env.amqp.dev
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 5s
+      timeout: 1s
+      retries: 20
+    networks:
+      - vsa-share-net
+
+  shared-db:
+    image: postgres:latest
+    restart: always
+    container_name: shared-db
+    ports:
+      - '5434:5432'
+    volumes: 
+      - shared_db_data_container:/var/lib/postgresql/data
+    env_file:
+      - ./apps/checkout-service/.env.pg.dev
+    networks:
+      - vsa-share-net
+
+  pgadmin:
+    container_name: pgadmin4_container
+    image: dpage/pgadmin4
+    restart: always
+    env_file:
+      - ./apps/checkout-service/.env.pg.dev
+    ports:
+      - "5050:80"
+    networks:
+      - vsa-share-net
+
+  checkout-service:
+    build:
+      context: .
+      dockerfile: ./apps/checkout-service/Dockerfile
+      target: development
+    command: npm run start:dev checkout-service
+    container_name: checkout-service
+    depends_on:
+      shared-db:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure:5
+    links:
+      - shared-db
+      - rabbitmq
+    ports:
+      - '3000:3000'
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - vsa-share-net
+
+networks:
+  vsa-share-net:
+    driver: bridge
+
+volumes:
+  shared_db_data_container:
+    driver: local
